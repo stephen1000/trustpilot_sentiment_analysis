@@ -22,4 +22,4 @@ CHROME_OPTIONS.add_argument("start-maximized")
 # CHROME_OPTIONS.add_argument("--kiosk")
 
 # This is used by the webdriver to determine how long it will wait for an element to appear while a page is loading
-MAX_PAGE_LOAD_TIME = .75
+MAX_PAGE_LOAD_TIME = .1
