@@ -32,10 +32,11 @@ and finally getting all the reviews for each company ([get_reviews.py](scrape/ge
 
 ## Deviations from the article
 
-1- I'm not using scrapy (I'm not a fan of it)
-2- Aside from looking at what features are in the dataset, I'm doing the scraping on my own. - I'm a bit concerned that the article's author has duplicate reviews in their dataset,
+1. I'm not using scrapy (I'm not a fan of it)
+2. Aside from looking at what features are in the dataset, I'm doing the scraping on my own. 
+  * I'm a bit concerned that the article's author has duplicate reviews in their dataset,
 since companies can belong to multiple categories. This could cause issues by reinforcing
 scores for those duplicate reviews
-3- I'm going to try to use tensorflow for the ML part. Again, this is personal preference.
-4- I'm including my collected data in source control. If you're just interested in trying the ML
+3. I'm going to try to use tensorflow for the ML part. Again, this is personal preference.
+4. I'm including my collected data in source control. If you're just interested in trying the ML
 part of this experiment, then there's no need to scrape trustpilot yourself.
