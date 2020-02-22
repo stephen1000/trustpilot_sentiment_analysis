@@ -29,18 +29,16 @@ I'm going to try a class based approach for this one, since it'll take the longe
 
 """
 import csv
+import multiprocessing
 import os
-from dataclasses import dataclass, asdict
+import re
+import time
+from dataclasses import asdict, dataclass
 from itertools import cycle
 
-from selenium import webdriver
-from selenium.common.exceptions import (
-    InvalidSessionIdException,
-    NoSuchElementException,
-    ElementClickInterceptedException,
-)
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
+import requests
+from bs4 import BeautifulSoup
+
 import settings
 
 
@@ -71,12 +69,12 @@ class CompanyReviews(object):
 
     company_url: str
     company_name: str
-    company_categories: str
     company_review_count: int
     company_rating: int
+    company_categories: str
+    review_rating: int
     review_title: str
     review_body: str
-    review_rating: int
 
     @classmethod
     def from_company_and_review(cls, company: Company, review: Review):
@@ -99,62 +97,38 @@ class CompanyReviews(object):
 
 class CompanyPageCrawler(object):
     """ A company review page on trustpilot.com """
+
     rating_map = {
-        'Excellent': 5,
-        'Great': 4,
-        'Average': 3,
-        'Poor': 2,
-        'Bad': 1,
-        '': 0,
+        "Excellent": 5,
+        "Great": 4,
+        "Average": 3,
+        "Poor": 2,
+        "Bad": 1,
+        "": 0,
     }
 
+    @staticmethod
+    def remove_whitespace(string: str):
+        """ Strip unwanted characters out of a string """
+        return re.sub(r"\s", "", string)
+
+    @staticmethod
+    def replace_breaks(string: str, replace_char=" "):
+        """ Replace line breaks with ``replace_char`` """
+        return string.replace("\n", replace_char).replace("\r", replace_char)
+
     def __init__(self):
-        self._browser = None
-        self.url = None
+        self.soup = None
 
-    def _get_browser(self):
-        """ Generate a fresh browser, using the options found in ``settings``"""
-        browser = webdriver.Chrome(options=settings.CHROME_OPTIONS)
-        browser.implicitly_wait(settings.MAX_PAGE_LOAD_TIME)
-        browser.get(settings.BASE_URL)
-        return browser
-
-    def _reset_browser(self):
-        """ Clear out the current browser and replace it with a new one """
-        try:
-            self._browser.close()
-        except Exception as e:
-            # replace this with the actual exception raised if/when it happens
-            print(repr(e))
-
-        self._browser = self._get_browser()
-
-        return self.browser
-
-    @property
-    def browser(self):
-        """ Returns _browser, initalizing if the browser is lost """
-        if not self._browser:
-            self._browser = self._get_browser()
-        return self._browser
-
-    def get(self, url: str, retries=1):
+    def get(self, url: str):
         """ 
         1-  Sets the ``self.url`` to ``url``
-        2-  Fetches a url with ``self.browser``, resetting ``retries`` times if an invalid sessionID is found, 
-            if the browser isn't pointed at the current page already
+        2-  Fetches a url with ``self.soup``, resetting ``retries`` times if an invalid sessionID is found, 
+            if the soup isn't pointed at the current page already
         """
-        self.url = url
-
-        if settings.BASE_URL + url == self.browser.current_url:
-            return
-
-        try:
-            self.browser.get(settings.BASE_URL + url)
-        except InvalidSessionIdException:
-            if retries > 0:
-                self._reset_browser()
-                self.get(url, retries=retries - 1)
+        response = requests.get(settings.BASE_URL + url)
+        self.soup = BeautifulSoup(response.text, features="lxml")
+        return response
 
     def get_company_reviews(self, company_url: str) -> list:
         """ Gets a list of ``CompanyReview`` for the given url """
@@ -171,31 +145,29 @@ class CompanyPageCrawler(object):
         self.get(company_url)
 
         # The page header has the company name, and a subheader with the review count/rating
-        header = self.browser.find_element_by_class_name("header-section")
-        name = header.find_element_by_class_name("multi-size-header__big").text
+        header = self.soup.find(attrs={"class": "header-section"})
+        name = header.find(attrs={"class": "multi-size-header__big"}).text
+        name = self.replace_breaks(name)
 
         # The subheader has a bunch of spaces in its body that we don't need, and i feel like there might be commas
         # in the review count, but i haven't found anything w/ 1k reviews so i'm just being cautious.
-        subheader_text = (
-            header.find_element_by_class_name("header--inline")
-            .text.replace(" ", "")
-            .replace(",", "")
-        )
+        subheader_text = header.find(attrs={"class": "header--inline"}).text
+        subheader_text = subheader_text.replace(",", "")
+        subheader_text = self.replace_breaks(subheader_text)
+        subheader_text = self.remove_whitespace(subheader_text)
 
         # this is just assigns review_count to the first half and rating to the second
         review_count, rating = tuple(subheader_text.split("•"))
         rating = self.rating_map.get(rating, None)
 
-        category_holder = self.browser.find_element_by_class_name("categories")
-        categories = [
-            link.text for link in category_holder.find_elements_by_tag_name("a")
-        ]
+        category_holder = self.soup.find(attrs={"class": "categories"})
+        categories = ""  # [link.text for link in category_holder.find_all("a")]
 
         return Company(
             url=company_url,
             name=name,
             categories=categories,
-            review_count=review_count,
+            review_count=int(review_count),
             rating=rating,
         )
 
@@ -206,31 +178,31 @@ class CompanyPageCrawler(object):
         reviews = list()
 
         while True:
-            review_elements = self.browser.find_elements_by_class_name("review")
+            review_elements = self.soup.find_all(attrs={"class": "review"})
 
             for review_element in review_elements:
 
                 # title and body can be found by class name
-                title = review_element.find_element_by_class_name(
-                    "review-content__title"
+                title = review_element.find(
+                    attrs={"class": "review-content__title"}
                 ).text
+                title = self.replace_breaks(title)
                 # Sometimes there's no review body, so we'll pass '' instead
-                try:
-                    body = review_element.find_element_by_class_name(
-                        "review-content__text"
-                    ).text
-                # newlines in the body break the csv file and aren't necessary for this anyways, so we'll 
-                # replace them with spaces.
-                    body = body.replace('\n',' ')
-                except NoSuchElementException:
+                body = review_element.find(attrs={"class": "review-content__text"})
+                if not body:
                     body = ""
+                else:
+                    # newlines in the body break the csv file and aren't necessary for this anyways, so we'll
+                    # replace them with spaces.
+                    body = body.text
+                    body = self.replace_breaks(body)
 
-                # rating has to be derived from the src attribute of the rating image
-                # ^ I thought that, but the alt text is much easier to parse (just need the first character)
-                rating_img = self.browser.find_element_by_class_name(
-                    "star-rating"
-                ).find_element_by_tag_name("img")
-                rating = int(rating_img.get_attribute("alt")[0])
+                rating_img = review_element.find(attrs={"class": "star-rating"}).find(
+                    "img"
+                )
+                rating = int(
+                    rating_img.attrs["src"].split("/")[-1].replace(".svg", "")[-1]
+                )
 
                 reviews.append(
                     Review(
@@ -238,44 +210,30 @@ class CompanyPageCrawler(object):
                     )
                 )
 
-            if not self.go_to_next_page():
+            if not self.go_to_next_page(company_url):
                 break
 
         return reviews
 
-    def go_to_next_page(self, retries=10):
+    def go_to_next_page(self, url: str):
         """ 
         Attempts to click the "next page" button, returning ``True`` if successful or ``False`` otherwise.
 
         Retries ``retries`` times.
         """
-        try:
-            next_button = self.browser.find_element_by_class_name("next-page")
-        except NoSuchElementException:
-            return False
+        parts = url.split("?page=")
+        if len(parts) == 1:
+            url = url + "?page=2"
+        else:
+            page = int(parts[-1])
+            url = f"{parts[0]}?page={page}"
+        response = self.get(url)
 
-        actions = ActionChains(self.browser)
-        actions.move_to_element(next_button)
-        return self._click_next_page(next_button, retries=retries)
-
-    def _click_next_page(self, next_button, retries=10) -> bool:
-        """ 
-        Attempts to click the "next page", scrolling down after each failed attempt.
-        Retries ``retries`` times.
-        """
-        try:
-            next_button.click()
-        except ElementClickInterceptedException:
-            # Something's blocking the button, so we scroll down and try again
-            if retries > 0:
-                self.browser.find_element_by_tag_name("body").send_keys(Keys.ARROW_DOWN)
-                return self._click_next_page(next_button, retries=retries - 1)
-        except NoSuchElementException:
-            # There isn't a next page
-            return False
-        # There is a next page button, and we clicked it, so update our current url
-        self.url = self.browser.current_url
-        return True
+        if response.url.endswith(url):
+            # We would have gotten redirected if we were out of pages, so we want to parse this page if we're at the
+            # url we thought we'd be at.
+            return True
+        return False
 
     def save_reviews_for_company(
         self, company_url: str, save_dir: str, file_name: str
@@ -285,10 +243,19 @@ class CompanyPageCrawler(object):
         reviews = self.get_company_reviews(company_url)
         headers = list(reviews[0].as_dict().keys())
 
-        with open(os.path.join(save_dir, file_name), "w", newline="", encoding='utf-8') as f:
+        with open(
+            os.path.join(save_dir, file_name), "w", newline="", encoding="utf-8"
+        ) as f:
             writer = csv.DictWriter(f, headers)
             writer.writeheader()
             writer.writerows([review.as_dict() for review in reviews])
+
+
+def get_review(url:str, save_dir:str):
+    """ Saves a review for a company """
+    crawler = CompanyPageCrawler()
+    file_name = f"{url}.csv".replace("/review/", "")
+    crawler.save_reviews_for_company(url, save_dir, file_name)
 
 
 def get_reviews(urls: list):
@@ -298,14 +265,15 @@ def get_reviews(urls: list):
     This is so we can start/stop wherever (I'm anticipating this will take a while), or if I decide we need to go
     multithreaded (which I *really* don't want to do for this project).
     """
-    crawler = CompanyPageCrawler()
     save_dir = os.path.join(settings.BASE_DIR, "reviews")
     url_count = len(urls)
 
     for i, url in enumerate(urls):
         print(f"Starting {url} ({i+1} of {url_count})...")
-        file_name = f"{url}.csv".replace("/review/", "")
-        crawler.save_reviews_for_company(url, save_dir, file_name)
+        # get_review(url, save_dir)
+        p = multiprocessing.Process(target=get_review, args=(url,save_dir))
+        time.sleep(.05)
+        p.start()
         print(f"... done with {url} ({url_count-i-1} remaining)!")
 
 
