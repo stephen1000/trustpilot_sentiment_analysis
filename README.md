@@ -39,4 +39,5 @@ since companies can belong to multiple categories. This could cause issues by re
 scores for those duplicate reviews
 3. I'm going to try to use tensorflow for the ML part. Again, this is personal preference.
 4. I'm including my collected data in source control. If you're just interested in trying the ML
-part of this experiment, then there's no need to scrape trustpilot yourself.
+part of this experiment, then there's no need to scrape trustpilot yourself. **actually that 
+seems like a bad idea so I'm not doing it now**
