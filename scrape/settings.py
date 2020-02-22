@@ -1,3 +1,7 @@
+"""
+Common settings used in the scraping scripts.
+"""
+
 import os
 
 from selenium.webdriver.chrome.options import Options
