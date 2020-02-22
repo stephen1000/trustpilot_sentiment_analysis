@@ -99,6 +99,14 @@ class CompanyReviews(object):
 
 class CompanyPageCrawler(object):
     """ A company review page on trustpilot.com """
+    rating_map = {
+        'Excellent': 5,
+        'Great': 4,
+        'Average': 3,
+        'Poor': 2,
+        'Bad': 1,
+        '': 0,
+    }
 
     def __init__(self):
         self._browser = None
@@ -176,6 +184,7 @@ class CompanyPageCrawler(object):
 
         # this is just assigns review_count to the first half and rating to the second
         review_count, rating = tuple(subheader_text.split("•"))
+        rating = self.rating_map.get(rating, None)
 
         category_holder = self.browser.find_element_by_class_name("categories")
         categories = [
@@ -202,12 +211,19 @@ class CompanyPageCrawler(object):
             for review_element in review_elements:
 
                 # title and body can be found by class name
-                title = self.browser.find_element_by_class_name(
+                title = review_element.find_element_by_class_name(
                     "review-content__title"
                 ).text
-                body = self.browser.find_element_by_class_name(
-                    "review-content__text"
-                ).text
+                # Sometimes there's no review body, so we'll pass '' instead
+                try:
+                    body = review_element.find_element_by_class_name(
+                        "review-content__text"
+                    ).text
+                # newlines in the body break the csv file and aren't necessary for this anyways, so we'll 
+                # replace them with spaces.
+                    body = body.replace('\n',' ')
+                except NoSuchElementException:
+                    body = ""
 
                 # rating has to be derived from the src attribute of the rating image
                 # ^ I thought that, but the alt text is much easier to parse (just need the first character)
@@ -234,9 +250,7 @@ class CompanyPageCrawler(object):
         Retries ``retries`` times.
         """
         try:
-            next_button = self.browser.find_element_by_class_name(
-                "button button--primary next-page"
-            )
+            next_button = self.browser.find_element_by_class_name("next-page")
         except NoSuchElementException:
             return False
 
@@ -255,7 +269,7 @@ class CompanyPageCrawler(object):
             # Something's blocking the button, so we scroll down and try again
             if retries > 0:
                 self.browser.find_element_by_tag_name("body").send_keys(Keys.ARROW_DOWN)
-                return self.next_page(retries=retries - 1)
+                return self._click_next_page(next_button, retries=retries - 1)
         except NoSuchElementException:
             # There isn't a next page
             return False
@@ -271,8 +285,9 @@ class CompanyPageCrawler(object):
         reviews = self.get_company_reviews(company_url)
         headers = list(reviews[0].as_dict().keys())
 
-        with open(os.path.join(save_dir, file_name), "w") as f:
+        with open(os.path.join(save_dir, file_name), "w", newline="", encoding='utf-8') as f:
             writer = csv.DictWriter(f, headers)
+            writer.writeheader()
             writer.writerows([review.as_dict() for review in reviews])
 
 
