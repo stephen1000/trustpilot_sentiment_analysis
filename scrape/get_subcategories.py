@@ -1,7 +1,6 @@
 """ Scraping subcategories from trustpilot """
 
 from bs4 import BeautifulSoup
-
 from selenium import webdriver
 
 from settings import BASE_URL, CHROME_OPTIONS
@@ -41,4 +40,3 @@ if __name__ == "__main__":
     # if we're running this directly, we see what subcategories we've found.
     subcategory_links = get_subcategories()
     print("\n".join(subcategory_links))
-    

@@ -1,4 +1,5 @@
 import re  # yeah things are about to get weird
+import os
 
 from bs4 import BeautifulSoup
 from retry import retry
@@ -12,7 +13,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
 from get_subcategories import get_subcategories
-from settings import BASE_URL, CHROME_OPTIONS
+from settings import BASE_URL, CHROME_OPTIONS, BASE_DIR
 
 
 @retry(ElementClickInterceptedException, tries=10, delay=0.5)
@@ -106,5 +107,5 @@ def get_companies():
 if __name__ == "__main__":
     # If we're running this script directly, we will refresh our company list.
     company_links = get_companies()
-    with open("companies.txt", "w") as f:
-        f.writelines(company_links)
+    with open(os.path.join(BASE_DIR, "companies.txt"), "w") as f:
+        f.write('\n'.join(company_links))
