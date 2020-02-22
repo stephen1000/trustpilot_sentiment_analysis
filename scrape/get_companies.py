@@ -18,17 +18,21 @@ from settings import BASE_URL, CHROME_OPTIONS, BASE_DIR
 
 @retry(ElementClickInterceptedException, tries=10, delay=0.5)
 def keep_clicking(browser, element):
-    """ Click a few times, ignoring interception, and scrolling down each time """
+    """
+    Click a few times, ignoring interception, and scrolling down each time 
+    """
     browser.find_element_by_tag_name("body").send_keys(Keys.ARROW_DOWN)
     element.click()
 
 
 def get_companies():
     """
-    Each subcategory has a number of companies, listed in pages of 20 at a time. We'll crawl through each page, adding to
-    our set of company links all the entries on a page.
+    Each subcategory has a number of companies, listed in pages of 20 at a time.
+    We'll crawl through each page, adding to our set of company links all the 
+    entries on a page.
 
-    We're using a set here because companies can be repeated between categories/subcategories.
+    We're using a set here because companies can be repeated between categories/
+    subcategories.
     """
     subcategory_links = get_subcategories()
     company_links = set()
@@ -60,7 +64,7 @@ def get_companies():
         # also yeah i know it's still janky as hell.
 
         while True:
-            
+
             # get the content of the current page into some tasty soup
             html = browser.page_source
             name_demangler_pattern = r"\bclass=\"(.+?)___.+?\""
@@ -70,7 +74,7 @@ def get_companies():
             )
 
             soup = BeautifulSoup(demangled_html, features="lxml")
-            
+
             # get the container w/ all the links we want
             container = soup.find(attrs={"class": "businessUnitCardsContainer"})
 
@@ -108,4 +112,4 @@ if __name__ == "__main__":
     # If we're running this script directly, we will refresh our company list.
     company_links = get_companies()
     with open(os.path.join(BASE_DIR, "companies.txt"), "w") as f:
-        f.write('\n'.join(company_links))
+        f.write("\n".join(company_links))
