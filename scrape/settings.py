@@ -18,4 +18,7 @@ CHROME_OPTIONS = Options()
 # "headless" browser, which will just run in the background, instead of appearing as a new window. If you want to see
 # the browser work, remove this option.
 CHROME_OPTIONS.add_argument("--headless")
+CHROME_OPTIONS.add_argument("start-maximized")
 
+# This is used by the webdriver to determine how long it will wait for an element to appear while a page is loading
+MAX_PAGE_LOAD_TIME = 10

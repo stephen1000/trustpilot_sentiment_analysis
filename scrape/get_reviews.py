@@ -28,7 +28,9 @@ Review details:
 I'm going to try a class based approach for this one, since it'll take the longest and it'll need to be fairly robust.
 
 """
+import csv
 import os
+from dataclasses import dataclass, asdict
 from itertools import cycle
 
 from selenium import webdriver
@@ -92,7 +94,7 @@ class CompanyReviews(object):
 
     def as_dict(self) -> dict:
         """ Serializes to a json/csv compatible dictionary. I just hate the default name... """
-        return self.asdict()
+        return asdict(self)
 
 
 class CompanyPageCrawler(object):
@@ -105,6 +107,7 @@ class CompanyPageCrawler(object):
     def _get_browser(self):
         """ Generate a fresh browser, using the options found in ``settings``"""
         browser = webdriver.Chrome(options=settings.CHROME_OPTIONS)
+        browser.implicitly_wait(settings.MAX_PAGE_LOAD_TIME)
         browser.get(settings.BASE_URL)
         return browser
 
@@ -127,7 +130,7 @@ class CompanyPageCrawler(object):
             self._browser = self._get_browser()
         return self._browser
 
-    def get(self, url: str, retries: int = 1):
+    def get(self, url: str, retries=1):
         """ 
         1-  Sets the ``self.url`` to ``url``
         2-  Fetches a url with ``self.browser``, resetting ``retries`` times if an invalid sessionID is found, 
@@ -147,8 +150,8 @@ class CompanyPageCrawler(object):
 
     def get_company_reviews(self, company_url: str) -> list:
         """ Gets a list of ``CompanyReview`` for the given url """
-        company = self.get_company
-        reviews = self.get_reviews
+        company = self.get_company(company_url)
+        reviews = self.get_reviews(company_url)
 
         return [
             CompanyReviews.from_company_and_review(company, review)
@@ -157,10 +160,11 @@ class CompanyPageCrawler(object):
 
     def get_company(self, company_url: str) -> Company:
         """ Populate a company object from ``company_url`` """
+        self.get(company_url)
 
         # The page header has the company name, and a subheader with the review count/rating
         header = self.browser.find_element_by_class_name("header-section")
-        name = header.find_element_by_class_name("multi-size-header__big").text()
+        name = header.find_element_by_class_name("multi-size-header__big").text
 
         # The subheader has a bunch of spaces in its body that we don't need, and i feel like there might be commas
         # in the review count, but i haven't found anything w/ 1k reviews so i'm just being cautious.
@@ -178,7 +182,6 @@ class CompanyPageCrawler(object):
             link.text for link in category_holder.find_elements_by_tag_name("a")
         ]
 
-
         return Company(
             url=company_url,
             name=name,
@@ -187,15 +190,39 @@ class CompanyPageCrawler(object):
             rating=rating,
         )
 
-    def get_reviews(company_url: str) -> list:
+    def get_reviews(self, company_url: str) -> list:
         """ Populate a list of reviews from ``company_url`` """
+        self.get(company_url)
+
         reviews = list()
 
         while True:
-            pass
+            review_elements = self.browser.find_elements_by_class_name("review")
+
+            for review_element in review_elements:
+
+                # title and body can be found by class name
+                title = self.browser.find_element_by_class_name(
+                    "review-content__title"
+                ).text
+                body = self.browser.find_element_by_class_name(
+                    "review-content__text"
+                ).text
+
+                # rating has to be derived from the src attribute of the rating image
+                # ^ I thought that, but the alt text is much easier to parse (just need the first character)
+                rating_img = self.browser.find_element_by_class_name(
+                    "star-rating"
+                ).find_element_by_tag_name("img")
+                rating = int(rating_img.get_attribute("alt")[0])
+
+                reviews.append(
+                    Review(
+                        company_url=company_url, title=title, body=body, rating=rating,
+                    )
+                )
 
             if not self.go_to_next_page():
-                # We're out of pages, so stop looping
                 break
 
         return reviews
@@ -206,9 +233,13 @@ class CompanyPageCrawler(object):
 
         Retries ``retries`` times.
         """
-        next_button = self.browser.find_elements_by_class_name(
-            "button button--primary next-page"
-        )
+        try:
+            next_button = self.browser.find_element_by_class_name(
+                "button button--primary next-page"
+            )
+        except NoSuchElementException:
+            return False
+
         actions = ActionChains(self.browser)
         actions.move_to_element(next_button)
         return self._click_next_page(next_button, retries=retries)
@@ -232,9 +263,35 @@ class CompanyPageCrawler(object):
         self.url = self.browser.current_url
         return True
 
+    def save_reviews_for_company(
+        self, company_url: str, save_dir: str, file_name: str
+    ) -> list:
+        """ Saves the reviews for a company in save_dir"""
 
-def get_reviews(urls):
-    pass
+        reviews = self.get_company_reviews(company_url)
+        headers = list(reviews[0].as_dict().keys())
+
+        with open(os.path.join(save_dir, file_name), "w") as f:
+            writer = csv.DictWriter(f, headers)
+            writer.writerows([review.as_dict() for review in reviews])
+
+
+def get_reviews(urls: list):
+    """
+    Write reviews for each company to a csv in scrape/reviews/<company_url>.csv
+
+    This is so we can start/stop wherever (I'm anticipating this will take a while), or if I decide we need to go
+    multithreaded (which I *really* don't want to do for this project).
+    """
+    crawler = CompanyPageCrawler()
+    save_dir = os.path.join(settings.BASE_DIR, "reviews")
+    url_count = len(urls)
+
+    for i, url in enumerate(urls):
+        print(f"Starting {url} ({i+1} of {url_count})...")
+        file_name = f"{url}.csv".replace("/review/", "")
+        crawler.save_reviews_for_company(url, save_dir, file_name)
+        print(f"... done with {url} ({url_count-i-1} remaining)!")
 
 
 if __name__ == "__main__":
