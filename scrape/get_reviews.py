@@ -298,6 +298,4 @@ if __name__ == "__main__":
     with open(os.path.join(settings.BASE_DIR, "companies.txt")) as f:
         urls_string = f.read()
     urls = urls_string.split("\n")
-    # only using 2 for now
-    urls = urls[:2]
     get_reviews(urls)
