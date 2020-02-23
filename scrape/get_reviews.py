@@ -133,7 +133,8 @@ class CompanyPageCrawler(object):
     def get_company_reviews(self, company_url: str) -> list:
         """ Gets a list of ``CompanyReview`` for the given url """
         company = self.get_company(company_url)
-        reviews = self.get_reviews(company_url)
+        page_count = (company.review_count // settings.REVIEWS_PER_PAGE) + 1
+        reviews = self.get_reviews(company_url, pages=page_count)
 
         return [
             CompanyReviews.from_company_and_review(company, review)
@@ -160,7 +161,7 @@ class CompanyPageCrawler(object):
         review_count, rating = tuple(subheader_text.split("•"))
         rating = self.rating_map.get(rating, None)
 
-        category_holder = self.soup.find(attrs={"class": "categories"})
+        # category_holder = self.soup.find(attrs={"class": "categories"})
         categories = ""  # [link.text for link in category_holder.find_all("a")]
 
         return Company(
@@ -171,7 +172,7 @@ class CompanyPageCrawler(object):
             rating=rating,
         )
 
-    def get_reviews(self, company_url: str) -> list:
+    def get_reviews(self, company_url: str, page_count:int) -> list:
         """ Populate a list of reviews from ``company_url`` """
         self.get(company_url)
 
@@ -278,8 +279,7 @@ def get_reviews(urls: list):
 
 
 if __name__ == "__main__":
-    # with open(os.path.join(settings.BASE_DIR, "companies.txt")) as f:
-    #     urls_string = f.read()
-    # urls = urls_string.split("\n")
-    # get_reviews(urls)
-    get_review('/review/www.bookbyte.com', os.path.join(settings.BASE_DIR, 'reviews'))
+    with open(os.path.join(settings.BASE_DIR, "missing_companies.txt")) as f:
+        urls_string = f.read()
+    urls = urls_string.split("\n")
+    get_reviews(urls)
