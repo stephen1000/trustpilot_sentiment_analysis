@@ -133,6 +133,10 @@ class CompanyPageCrawler(object):
     def get_company_reviews(self, company_url: str) -> list:
         """ Gets a list of ``CompanyReview`` for the given url """
         company = self.get_company(company_url)
+        if not company:
+            # There's quite a few pages that are still live, but inactive.
+            # We can't really use these, so we just return
+            return
         page_count = (company.review_count // settings.REVIEWS_PER_PAGE) + 1
         reviews = self.get_reviews(company_url, pages=page_count)
 
@@ -147,8 +151,13 @@ class CompanyPageCrawler(object):
 
         # The page header has the company name, and a subheader with the review count/rating
         header = self.soup.find(attrs={"class": "header-section"})
-        name = header.find(attrs={"class": "multi-size-header__big"}).text
-        name = self.replace_breaks(name)
+
+        try:
+            name = header.find(attrs={"class": "multi-size-header__big"}).text
+        except AttributeError:
+            print(f'Inactive page "{company_url}".')
+            return None
+        return None
 
         # The subheader has a bunch of spaces in its body that we don't need, and i feel like there might be commas
         # in the review count, but i haven't found anything w/ 1k reviews so i'm just being cautious.
@@ -172,48 +181,48 @@ class CompanyPageCrawler(object):
             rating=rating,
         )
 
-    def get_reviews(self, company_url: str, page_count:int) -> list:
+    def get_reviews(self, company_url: str, page_count: int) -> list:
         """ Populate a list of reviews from ``company_url`` """
         self.get(company_url)
 
         reviews = list()
 
-        while True:
-            review_elements = self.soup.find_all(attrs={"class": "review"})
+        page_nums = [f"?page={i+1}" for i in range(page_count)]
 
-            for review_element in review_elements:
+        for page_num in page_nums:
+            reviews += self.get_reviews_for_page(company_url, page_num)
 
-                # title and body can be found by class name
-                title = review_element.find(
-                    attrs={"class": "review-content__title"}
-                ).text
-                title = self.replace_breaks(title)
-                # Sometimes there's no review body, so we'll pass '' instead
-                body = review_element.find(attrs={"class": "review-content__text"})
-                if not body:
-                    body = ""
-                else:
-                    # newlines in the body break the csv file and aren't necessary for this anyways, so we'll
-                    # replace them with spaces.
-                    body = body.text
-                    body = self.replace_breaks(body)
+        return reviews
 
-                rating_img = review_element.find(attrs={"class": "star-rating"}).find(
-                    "img"
-                )
-                rating = int(
-                    rating_img.attrs["src"].split("/")[-1].replace(".svg", "")[-1]
-                )
+    def get_reviews_for_page(self, company_url: str, page_num: str) -> list:
+        """ Fetch all the reviews at a url """
 
-                reviews.append(
-                    Review(
-                        company_url=company_url, title=title, body=body, rating=rating,
-                    )
-                )
+        reviews = list()
+        review_elements = self.get(company_url + page_num).find_all(
+            attrs={"class": "review"}
+        )
 
-            company_url, next_page = self.go_to_next_page(company_url)
-            if not next_page:
-                break
+        for review_element in review_elements:
+
+            # title and body can be found by class name
+            title = review_element.find(attrs={"class": "review-content__title"}).text
+            title = self.replace_breaks(title)
+            # Sometimes there's no review body, so we'll pass '' instead
+            body = review_element.find(attrs={"class": "review-content__text"})
+            if not body:
+                body = ""
+            else:
+                # newlines in the body break the csv file and aren't necessary for this anyways, so we'll
+                # replace them with spaces.
+                body = body.text
+                body = self.replace_breaks(body)
+
+            rating_img = review_element.find(attrs={"class": "star-rating"}).find("img")
+            rating = int(rating_img.attrs["src"].split("/")[-1].replace(".svg", "")[-1])
+
+            reviews.append(
+                Review(company_url=company_url, title=title, body=body, rating=rating,)
+            )
 
         return reviews
 
@@ -243,6 +252,8 @@ class CompanyPageCrawler(object):
         """ Saves the reviews for a company in save_dir"""
 
         reviews = self.get_company_reviews(company_url)
+        if not reviews:
+            return
         headers = list(reviews[0].as_dict().keys())
 
         with open(
@@ -253,7 +264,7 @@ class CompanyPageCrawler(object):
             writer.writerows([review.as_dict() for review in reviews])
 
 
-def get_review(url:str, save_dir:str):
+def get_review(url: str, save_dir: str):
     """ Saves a review for a company """
     if url is None:
         return
@@ -273,9 +284,9 @@ def get_reviews(urls: list):
     url_count = len(urls)
 
     for i, url in enumerate(urls):
-        print(f"Starting {url} ({i+1} of {url_count})...")
+        # print(f"Starting {url} ({i+1} of {url_count})...")
         get_review(url, save_dir)
-        print(f"... done with {url} ({url_count-i-1} remaining)!")
+        # print(f"... done with {url} ({url_count-i-1} remaining)!")
 
 
 if __name__ == "__main__":
@@ -283,3 +294,5 @@ if __name__ == "__main__":
         urls_string = f.read()
     urls = urls_string.split("\n")
     get_reviews(urls)
+    # get_review("/review/laskerland.com", os.path.join(settings.BASE_DIR, "reviews"))
+
