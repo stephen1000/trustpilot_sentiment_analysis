@@ -29,17 +29,21 @@ I'm going to try a class based approach for this one, since it'll take the longe
 
 """
 import csv
-import multiprocessing
 import os
 import re
 import time
 from dataclasses import asdict, dataclass
 from itertools import cycle, zip_longest
+from io import StringIO
 
 import requests
 from bs4 import BeautifulSoup
+import boto3
 
-import settings
+s3 = boto3.client("s3")
+BASE_URL = "https://trustpilot.com"
+BASE_DIR = os.path.dirname(__file__)
+S3_BUCKET = os.environ.get("S3_BUCKET")
 
 
 @dataclass
@@ -126,8 +130,8 @@ class CompanyPageCrawler(object):
         2-  Fetches a url with ``self.soup``, resetting ``retries`` times if an invalid sessionID is found, 
             if the soup isn't pointed at the current page already
         """
-        response = requests.get(settings.BASE_URL + url)
-        self.soup = BeautifulSoup(response.text, features="lxml")
+        response = requests.get(BASE_URL + url)
+        self.soup = BeautifulSoup(response.text, features="html.parser")
         return response
 
     def get_company_reviews(self, company_url: str) -> list:
@@ -160,7 +164,6 @@ class CompanyPageCrawler(object):
         review_count, rating = tuple(subheader_text.split("•"))
         rating = self.rating_map.get(rating, None)
 
-        category_holder = self.soup.find(attrs={"class": "categories"})
         categories = ""  # [link.text for link in category_holder.find_all("a")]
 
         return Company(
@@ -236,50 +239,32 @@ class CompanyPageCrawler(object):
             return url, True
         return url, False
 
-    def save_reviews_for_company(
-        self, company_url: str, save_dir: str, file_name: str
-    ) -> list:
+    def save_reviews_for_company(self, company_url: str) -> list:
         """ Saves the reviews for a company in save_dir"""
 
         reviews = self.get_company_reviews(company_url)
         headers = list(reviews[0].as_dict().keys())
 
-        with open(
-            os.path.join(save_dir, file_name), "w", newline="", encoding="utf-8"
-        ) as f:
-            writer = csv.DictWriter(f, headers)
-            writer.writeheader()
-            writer.writerows([review.as_dict() for review in reviews])
+        f = StringIO()
+        writer = csv.DictWriter(f, headers)
+        writer.writeheader()
+        writer.writerows([review.as_dict() for review in reviews])
+
+        return f
 
 
-def get_review(url:str, save_dir:str):
-    """ Saves a review for a company """
-    if url is None:
-        return
-    crawler = CompanyPageCrawler()
-    file_name = f"{url}.csv".replace("/review/", "")
-    crawler.save_reviews_for_company(url, save_dir, file_name)
+crawler = CompanyPageCrawler()
 
 
-def get_reviews(urls: list):
-    """
-    Write reviews for each company to a csv in scrape/reviews/<company_url>.csv
+def lambda_handler(event, context):
+    """ process an aws event """
+    url = event["Records"][0]["body"]
+    try:
+        review_body = crawler.save_reviews_for_company(url)
+        file_name = "reviews/" + url.replace("/review/", "").replace("/", "__") + ".csv"
+        s3.put_object(Bucket=S3_BUCKET, Key=file_name, Body=review_body.getvalue())
 
-    This is so we can start/stop wherever (I'm anticipating this will take a while), or if I decide we need to go
-    multithreaded (which I *really* don't want to do for this project).
-    """
-    save_dir = os.path.join(settings.BASE_DIR, "reviews")
-    url_count = len(urls)
+        return {"status": 200, "response": "nailed it"}
+    except Exception as e:
+        return {"status": 500, "response": repr(e)}
 
-    for i, url in enumerate(urls):
-        print(f"Starting {url} ({i+1} of {url_count})...")
-        get_review(url, save_dir)
-        print(f"... done with {url} ({url_count-i-1} remaining)!")
-
-
-if __name__ == "__main__":
-    # with open(os.path.join(settings.BASE_DIR, "companies.txt")) as f:
-    #     urls_string = f.read()
-    # urls = urls_string.split("\n")
-    # get_reviews(urls)
-    get_review('/review/www.bookbyte.com', os.path.join(settings.BASE_DIR, 'reviews'))

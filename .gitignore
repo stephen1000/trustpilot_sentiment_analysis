@@ -1,6 +1,7 @@
 .vscode
 chromedriver.exe
-scrape/reviews/*
+reviews
+package
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
