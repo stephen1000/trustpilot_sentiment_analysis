@@ -2,6 +2,8 @@
 chromedriver.exe
 reviews
 package
+*.zip
+tmp.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
