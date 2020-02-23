@@ -25,6 +25,6 @@ missing = set(companies) - set(reviews)
 print(len(missing))
 
 with open('missing_companies.txt','w') as f:
-    f.write('\n'.join(missing))
+    f.write('\n'.join(f))
 
 
