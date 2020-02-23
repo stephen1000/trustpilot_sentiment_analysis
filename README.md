@@ -29,15 +29,18 @@ I'm tackling this by getting urls for each subcategory ([get_subcategories.py](s
 then getting a **set** of company urls w/in each subcategory ([get_companies.py](scrape/get_companies.py)),
 and finally getting all the reviews for each company ([get_reviews.py](scrape/get_reviews.py)).
 
-
 ## Deviations from the article
 
 1. I'm not using scrapy (I'm not a fan of it)
-2. Aside from looking at what features are in the dataset, I'm doing the scraping on my own. 
-  * I'm a bit concerned that the article's author has duplicate reviews in their dataset,
-since companies can belong to multiple categories. This could cause issues by reinforcing
-scores for those duplicate reviews
+2. Aside from looking at what features are in the dataset, I'm doing the scraping on my own.
+
+- I'm a bit concerned that the article's author has duplicate reviews in their dataset,
+  since companies can belong to multiple categories. This could cause issues by reinforcing
+  scores for those duplicate reviews
+- Ok so I may have regretted not using scrapy... but I did get a cool opportunity to use lambda + sqs
+  to chew through all the companies (except some went > 15min... still working on that)
+
 3. I'm going to try to use tensorflow for the ML part. Again, this is personal preference.
 4. I'm including my collected data in source control. If you're just interested in trying the ML
-part of this experiment, then there's no need to scrape trustpilot yourself. **actually that 
-seems like a bad idea so I'm not doing it now**
+   part of this experiment, then there's no need to scrape trustpilot yourself. **actually that
+   seems like a bad idea so I'm not doing it now**
