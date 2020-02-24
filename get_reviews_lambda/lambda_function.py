@@ -176,46 +176,46 @@ class CompanyPageCrawler(object):
 
     def get_reviews(self, company_url: str) -> list:
         """ Populate a list of reviews from ``company_url`` """
-        self.get(company_url)
+        # self.get(company_url)
 
         reviews = list()
 
-        while True:
-            review_elements = self.soup.find_all(attrs={"class": "review"})
+        
+        review_elements = self.soup.find_all(attrs={"class": "review"})
 
-            for review_element in review_elements:
+        for review_element in review_elements:
 
-                # title and body can be found by class name
-                title = review_element.find(
-                    attrs={"class": "review-content__title"}
-                ).text
-                title = self.replace_breaks(title)
-                # Sometimes there's no review body, so we'll pass '' instead
-                body = review_element.find(attrs={"class": "review-content__text"})
-                if not body:
-                    body = ""
-                else:
-                    # newlines in the body break the csv file and aren't necessary for this anyways, so we'll
-                    # replace them with spaces.
-                    body = body.text
-                    body = self.replace_breaks(body)
+            # title and body can be found by class name
+            title = review_element.find(
+                attrs={"class": "review-content__title"}
+            ).text
+            title = self.replace_breaks(title)
+            # Sometimes there's no review body, so we'll pass '' instead
+            body = review_element.find(attrs={"class": "review-content__text"})
+            if not body:
+                body = ""
+            else:
+                # newlines in the body break the csv file and aren't necessary for this anyways, so we'll
+                # replace them with spaces.
+                body = body.text
+                body = self.replace_breaks(body)
 
-                rating_img = review_element.find(attrs={"class": "star-rating"}).find(
-                    "img"
+            rating_img = review_element.find(attrs={"class": "star-rating"}).find(
+                "img"
+            )
+            rating = int(
+                rating_img.attrs["src"].split("/")[-1].replace(".svg", "")[-1]
+            )
+
+            reviews.append(
+                Review(
+                    company_url=company_url, title=title, body=body, rating=rating,
                 )
-                rating = int(
-                    rating_img.attrs["src"].split("/")[-1].replace(".svg", "")[-1]
-                )
+            )
 
-                reviews.append(
-                    Review(
-                        company_url=company_url, title=title, body=body, rating=rating,
-                    )
-                )
-
-            company_url, next_page = self.go_to_next_page(company_url)
-            if not next_page:
-                break
+            # company_url, next_page = self.go_to_next_page(company_url)
+            # if not next_page:
+            #     break
 
         return reviews
 
@@ -256,14 +256,15 @@ class CompanyPageCrawler(object):
 crawler = CompanyPageCrawler()
 
 
+
 def lambda_handler(event, context):
     """ process an aws event """
-    url = event["Records"][0]["body"]
     try:
-        review_body = crawler.save_reviews_for_company(url)
-        file_name = "reviews/" + url.replace("/review/", "").replace("/", "__") + ".csv"
-        s3.put_object(Bucket=S3_BUCKET, Key=file_name, Body=review_body.getvalue())
-
+        for record in event['Records']:
+            url = record['body']
+            review_body = crawler.save_reviews_for_company(url)
+            file_name = "reviews/" + url.replace("/review/", "").replace("/", "%2F").replace('?','%3F') + ".csv"
+            s3.put_object(Bucket=S3_BUCKET, Key=file_name, Body=review_body.getvalue())
         return {"status": 200, "response": "nailed it"}
     except Exception as e:
         return {"status": 500, "response": repr(e)}

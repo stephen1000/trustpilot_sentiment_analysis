@@ -10,7 +10,7 @@ SQS_ADDRESS = os.environ.get('SQS_ADDRESS')
 
 sqs = boto3.client('sqs')
 
-with open(os.path.join('scrape','companies.txt')) as f:
+with open(os.path.join('scrape','missing_pages.txt')) as f:
     urls = f.read().split('\n')
 
 for url in urls:

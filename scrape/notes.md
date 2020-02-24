@@ -35,3 +35,9 @@ is to go async, since most of the time it takes to get a response is spent waiti
 Parrallelizing (which I promise to misspell in many new and exciting ways) lets us
 start new requests while the old ones are waiting.
 
+## Why you always need a dead-letter queue
+
+So some messages may not actually get processed. They may be malformed messages,
+or rely on resources that are no longer present. Either way, if you don't clear
+them out of your SQS queue, they'll just float around forever, being attempted by
+whatever lambda you hooked up to it.

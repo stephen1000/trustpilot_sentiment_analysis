@@ -30,11 +30,16 @@ I'm going to try a class based approach for this one, since it'll take the longe
 """
 import csv
 import multiprocessing
+import threading
 import os
 import re
 import time
 from dataclasses import asdict, dataclass
 from itertools import cycle, zip_longest
+from time import sleep
+import logging
+
+logging.basicConfig(filename='missing_pages.txt',level=logging.CRITICAL)
 
 import requests
 from bs4 import BeautifulSoup
@@ -95,6 +100,14 @@ class CompanyReviews(object):
         return asdict(self)
 
 
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # https://docs.python.org/3/library/itertools.html#itertools-recipes
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
+
+
 class CompanyPageCrawler(object):
     """ A company review page on trustpilot.com """
 
@@ -138,7 +151,7 @@ class CompanyPageCrawler(object):
             # We can't really use these, so we just return
             return
         page_count = (company.review_count // settings.REVIEWS_PER_PAGE) + 1
-        reviews = self.get_reviews(company_url, pages=page_count)
+        reviews = self.get_reviews(company_url, page_count=page_count)
 
         return [
             CompanyReviews.from_company_and_review(company, review)
@@ -157,7 +170,6 @@ class CompanyPageCrawler(object):
         except AttributeError:
             print(f'Inactive page "{company_url}".')
             return None
-        return None
 
         # The subheader has a bunch of spaces in its body that we don't need, and i feel like there might be commas
         # in the review count, but i haven't found anything w/ 1k reviews so i'm just being cautious.
@@ -167,7 +179,10 @@ class CompanyPageCrawler(object):
         subheader_text = self.remove_whitespace(subheader_text)
 
         # this is just assigns review_count to the first half and rating to the second
-        review_count, rating = tuple(subheader_text.split("•"))
+        try:
+            review_count, rating = tuple(subheader_text.split("•"))
+        except ValueError:
+            return None
         rating = self.rating_map.get(rating, None)
 
         # category_holder = self.soup.find(attrs={"class": "categories"})
@@ -185,22 +200,38 @@ class CompanyPageCrawler(object):
         """ Populate a list of reviews from ``company_url`` """
         self.get(company_url)
 
-        reviews = list()
+        self.reviews = list()
 
+        print(page_count)
         page_nums = [f"?page={i+1}" for i in range(page_count)]
-
         for page_num in page_nums:
-            reviews += self.get_reviews_for_page(company_url, page_num)
+            logging.critical(company_url + page_num)
+        return []
 
-        return reviews
+        threads = []
+        while page_nums:
+            thread = threading.Thread(target=self.get_reviews_for_page, args=(company_url,page_nums.pop()))
+            threads.append(thread)
+        
+        for thread in threads:
+            while threading.active_count() > 50:
+                sleep(1)
+            thread.start()            
+
+        for thread in threads:
+            thread.join()
+
+        return self.reviews
 
     def get_reviews_for_page(self, company_url: str, page_num: str) -> list:
         """ Fetch all the reviews at a url """
+        if page_num is None:
+            return []
+        print(f"Company {company_url}, Page {page_num}")
 
         reviews = list()
-        review_elements = self.get(company_url + page_num).find_all(
-            attrs={"class": "review"}
-        )
+        self.get(company_url + page_num)
+        review_elements = self.soup.find_all(attrs={"class": "review"})
 
         for review_element in review_elements:
 
@@ -224,27 +255,8 @@ class CompanyPageCrawler(object):
                 Review(company_url=company_url, title=title, body=body, rating=rating,)
             )
 
-        return reviews
-
-    def go_to_next_page(self, url: str):
-        """ 
-        Attempts to click the "next page" button, returning ``True`` if successful or ``False`` otherwise.
-
-        Retries ``retries`` times.
-        """
-        parts = url.split("?page=")
-        if len(parts) == 1:
-            url = url + "?page=2"
-        else:
-            page = int(parts[-1])
-            url = f"{parts[0]}?page={page+1}"
-        response = self.get(url)
-
-        if response.url.endswith(url):
-            # We would have gotten redirected if we were out of pages, so we want to parse this page if we're at the
-            # url we thought we'd be at.
-            return url, True
-        return url, False
+        self.reviews += reviews
+        # return reviews
 
     def save_reviews_for_company(
         self, company_url: str, save_dir: str, file_name: str
@@ -294,5 +306,6 @@ if __name__ == "__main__":
         urls_string = f.read()
     urls = urls_string.split("\n")
     get_reviews(urls)
-    # get_review("/review/laskerland.com", os.path.join(settings.BASE_DIR, "reviews"))
+    # single = "/review/kiwi.com"
+    # get_review(single, os.path.join(settings.BASE_DIR, "reviews"))
 
