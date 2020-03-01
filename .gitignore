@@ -4,6 +4,7 @@ reviews
 package
 *.zip
 tmp.*
+bits/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
